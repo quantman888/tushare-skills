@@ -1,8 +1,8 @@
 ---
-name: tushare
-description: Tushare是全品类财经数据服务平台，拥有丰富的数据内容，如股票、基金、期货、数字货币等行情数据，公司财务、基金经理等基本面数据。该模块通过标准化API方式统一了数据资产的对外服务方式，以帮助有需要的技术用户更实时、便捷的使用相关数据。
+name: tushare-data
+description: 面向中文自然语言的 Tushare 数据研究技能。用于把“看看这只股票最近怎么样”“帮我查财报趋势”“最近哪个板块最强”“北向资金在买什么”“给我导出一份行情数据”这类请求，转成可执行的数据获取、清洗、对比、筛选、导出与简要分析流程。适用于 A 股、指数、ETF/基金、财务、估值、资金流、公告新闻、板块概念与宏观数据等研究场景。
 author: tushare.pro
-version: 1.1.7
+version: 1.1.8
 credentials:
   - name: TUSHARE_TOKEN
     description: Tushare Token，用于认证和授权访问Tushare数据服务。
@@ -18,289 +18,805 @@ requirements:
   network_access: true
 ---
 
-# Tushare
+# tushare-data
 
-## 概述
+把自然语言财经数据请求，转成可执行的 Tushare 数据工作流。
 
-Tushare是全品类财经数据服务平台，拥有丰富的数据内容，如股票、基金、期货、数字货币等行情数据，公司财务、基金经理等基本面数据。该模块通过标准化API方式统一了数据资产的对外服务方式，以帮助有需要的技术用户更实时、便捷的使用相关数据。
+这是一个面向自然语言的金融数据研究 skill。
 
-## 前置条件，环境准备
 
-- 安装python运行环境(推荐python3.7+)，并安装tushare依赖包(推荐从清华pypi镜像安装)。
+## What this skill is for
+
+使用这个 skill 的典型场景：
+
+- 看某只股票、指数、ETF 最近走势
+- 查公司基本资料、估值、财务趋势
+- 做多标的横向对比
+- 看资金流、北向资金、龙虎榜、板块强弱
+- 梳理公告、新闻、研报、政策线索
+- 查看 CPI / PPI / PMI / 社融 / 利率等宏观数据
+- 导出 CSV / parquet 供后续分析或回测使用
+- 生成简洁研究摘要，而不是只吐原始字段表
+
+先理解用户要解决什么问题，再去选接口、取数、整理、解释、交付。
+
+***
+
+## When to use
+
+当用户表达以下意图时，优先使用本 skill：
+
+### 行情 / 趋势
+
+- 看下 XX 最近怎么样
+- XX 这段时间涨得怎么样
+- 今年以来表现如何
+- 最近有没有放量
+- 这票最近强不强
+
+### 财务 / 估值 / 公司质量
+
+- 看下 XX 财报
+- 最近几个季度利润趋势
+- 财务质量怎么样
+- 现金流好不好
+- 现在估值算高吗
+- 帮我看 PE / PB / ROE / 毛利率
+
+### 对比 / 排行 / 筛选
+
+- XX 和 YY 谁更强
+- 帮我横向比较一下
+- 哪些公司利润增长更快
+- 帮我筛一下高 ROE 低负债
+- 给我排个前十
+
+### 板块 / 指数 / 主题
+
+- 最近哪个板块最强
+- 半导体最近怎么样
+- 机器人为什么涨
+- 指数成分股有哪些
+- 哪些主题最热
+
+### 资金流 / 情绪
+
+- 最近资金在买什么
+- 北向资金最近流向哪里
+- 哪个板块最吸金
+- 主力资金流入最多的是谁
+- 龙虎榜上有什么看点
+
+### 公告 / 新闻 / 研报 / 政策
+
+- 最近有什么公告
+- 帮我梳理下 XX 公告
+- 最近有没有什么催化
+- 最近新闻面怎么样
+- 最近有什么重要政策
+
+### 宏观 / 跨市场
+
+- 最近宏观环境怎么样
+- CPI / PMI 最近怎么看
+- 当前市场风格偏什么
+- 大盘环境偏多还是偏空
+- 港股 / 美股 / 美债最近怎么样
+
+### 数据导出 / 研究准备
+
+- 给我导出一份行情数据
+- 把近两年日线拉成 CSV
+- 生成可回测的数据表
+- 拉一个研究表供后续分析
+
+***
+
+## What this skill is NOT for
+
+这个 skill 不适合：
+
+- 直接给买卖建议或替代投资顾问
+- 自动下单或执行交易
+- 需要毫秒级实时交易决策的场景
+- 复杂回测引擎、组合优化系统本身的实现（那是另一个工程）
+- 在没有 Tushare 权限/积分支持的情况下强行伪造数据
+
+如果数据权限不够、接口不可用或时间范围不合理，要明确说出限制，不要硬编。
+
+***
+
+## Natural-language trigger guide
+
+即使用户完全不说 `tushare`、`financials`、`macro` 这些术语，只要意图符合以下含义，也应该触发本 skill。
+
+### 常见口语触发
+
+- 看看这个股票最近怎么样
+- 给我快速研究一下 XX
+- 上次说的那只票现在什么情况
+- 帮我看下财报
+- 最近哪个板块最强
+- 北向最近在买什么
+- 有什么催化消息
+- 这个公司值不值得重点看
+- 给我拉份数据
+- 导出成 CSV
+- 帮我筛一批票
+- 把这几个公司对比一下
+
+### 中文自然语言优先原则
+
+用户说人话时，先理解任务，不要先回到接口名和字段名。
+优先把：
+
+- “最近” 解释成合理时间窗
+- “财报” 解释成最近 8 个季度 / 最近年度
+- “强不强” 解释成走势 + 相对强弱 + 活跃度
+- “资金关注” 解释成净流入、活跃成交、龙虎榜/北向等可用口径
+
+如果任务有多个合理解释，再做最小澄清。
+
+***
+
+## Environment check
+
+在真正请求数据之前，先做前置校验：
+
+1. 检查 Python 是否可用， 版本要求 3.7+
+2. 检查 `tushare` 包是否已安装·
+3. 检查 `TUSHARE_TOKEN` 是否存在, 或者运行py脚本`import tushare as ts; print(ts.get_token())"`检查本地是否已配置
+4. 必要时做一次轻量接口冒烟测试（如交易日历 / 基础接口）
+5. 如用户请求高权限接口，提前提示可能存在积分/权限限制
+
+若缺失 token，直接提示最短修复路径，例如：
 
 ```bash
-pip install -U tushare -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-
-- Tushare官网注册，获取token，并配置认证信息。 [注册地址](https://tushare.pro/register)
-
-```bash
-# 通过环境变量配置认证信息
 export TUSHARE_TOKEN=your_token
 ```
 
-```python
-# 或者全局设置本地认证信息
-import tushare as ts
-ts.set_token('your_token')
-```
+不要等到主查询跑失败了才暴露环境问题。
 
-## 工作流程
+***
 
-- 根据需求,查询接口列表，选择合适的接口。
-- 根据在线链接，获取接口的在线文档。
-- 读取和学习在线接口文档，写python代码获取数据。（**请务必根据接口文档说明，正确使用参数和返回字段。**）
-- 运行python代码，查看返回结果。
+## Intent taxonomy
 
-## 示例，获取上市交易的股票列表
-1. 根据需求找到接口 stock_basic
-2. 获取在线接口文档，get https://tushare.pro/wctapi/documents/25.md
-3. 根据接口文档（入参list_status=L表示上市状态为上市，返回字段需要ts_code,symbol,name,area,industry,list_date），写python代码获取数据。
-```python
-import os
-import tushare as ts
+先识别任务类型，再决定接口组合。
 
-# 初始化pro接口实例
-pro = ts.pro_api()
+### 1. 行情 / 趋势
 
-# 查询数据接口（*股票列表*），获取上市交易的股票列表
-df = pro.stock_basic(list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
-print(df)
-```
-4. 运行python代码，查看返回结果。
+典型问题：
 
-## 接口列表
+- 最近走势怎么样
+- 今年涨了多少
+- 最近波动大不大
+- 最近有没有放量
 
-| 接口                                                                   | 标题               | 分类                 | 描述                                                                                                                                                                                  |
-| :------------------------------------------------------------------- | :--------------- | :----------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [rt_min](https://tushare.pro/wctapi/documents/416.md)               | ETF实时分钟          | ETF专题              | 获取ETF实时分钟数据，包括1\~60min                                                                                                                                                              |
-| [rt_etf_k](https://tushare.pro/wctapi/documents/400.md)            | ETF实时日线          | ETF专题              | 获取ETF实时日k线行情，支持按ETF代码或代码通配符一次性提取全部ETF实时日k线行情                                                                                                                                        |
-| [stk_mins](https://tushare.pro/wctapi/documents/387.md)             | ETF历史分钟          | ETF专题              | 获取ETF分钟数据，支持1min/5min/15min/30min/60min行情，提供Python SDK和 http Restful API两种方式                                                                                                        |
-| [etf_index](https://tushare.pro/wctapi/documents/386.md)            | ETF基准指数          | ETF专题              | 获取ETF基准指数列表信息                                                                                                                                                                       |
-| [etf_basic](https://tushare.pro/wctapi/documents/385.md)            | ETF基本信息          | ETF专题              | 获取国内ETF基础信息，包括了QDII。数据来源与沪深交易所公开披露信息。                                                                                                                                               |
-| [fund_adj](https://tushare.pro/wctapi/documents/199.md)             | ETF复权因子          | ETF专题              | 获取基金复权因子，用于计算基金复权行情                                                                                                                                                                 |
-| [fund_daily](https://tushare.pro/wctapi/documents/127.md)           | ETF日线行情          | ETF专题              | 获取ETF行情每日收盘后成交数据，历史超过10年                                                                                                                                                            |
-| [etf_share_size](https://tushare.pro/wctapi/documents/408.md)      | ETF份额规模          | ETF专题              | 获取沪深ETF每日份额和规模数据，能体现规模份额的变化，掌握ETF资金动向，同时提供每日净值和收盘价；数据指标是分批入库，建议在每日19点后提取；另外，涉及海外的ETF数据更新会晚一些属于正常情况。                                                                                 |
-| [bc_otcqt](https://tushare.pro/wctapi/documents/322.md)             | 柜台流通式债券报价        | 债券专题               | 柜台流通式债券报价                                                                                                                                                                           |
-| [cb_rate](https://tushare.pro/wctapi/documents/305.md)              | 可转债票面利率          | 债券专题               | 获取可转债票面利率                                                                                                                                                                           |
-| [bond_blk_detail](https://tushare.pro/wctapi/documents/272.md)     | 大宗交易明细           | 债券专题               | 获取沪深交易所债券大宗交易数据，可以通过**[数据工具](https://tushare.pro/webclient/)**调试和查看数据。                                                                                                              |
-| [bond_blk](https://tushare.pro/wctapi/documents/271.md)             | 大宗交易             | 债券专题               | 获取沪深交易所债券大宗交易数据，可以通过**[数据工具](https://tushare.pro/webclient/)**调试和查看数据。                                                                                                              |
-| [cb_call](https://tushare.pro/wctapi/documents/269.md)              | 可转债赎回信息          | 债券专题               | 获取可转债到期赎回、强制赎回等信息。数据来源于公开披露渠道，供个人和机构研究使用，请不要用于数据商业目的。                                                                                                                               |
-| [repo_daily](https://tushare.pro/wctapi/documents/256.md)           | 债券回购日行情          | 债券专题               | 债券回购日行情                                                                                                                                                                             |
-| [bc_bestotcqt](https://tushare.pro/wctapi/documents/323.md)         | 柜台流通式债券最优报价      | 债券专题               | 柜台流通式债券最优报价                                                                                                                                                                         |
-| [cb_factor_pro](https://tushare.pro/wctapi/documents/392.md)       | 可转债技术面因子(专业版)    | 债券专题               | 获取可转债每日技术面因子数据，用于跟踪可转债当前走势情况，数据由Tushare社区自产，覆盖全历史；输出参数_bfq表示不复权，_qfq表示前复权 _hfq表示后复权，描述中说明了因子的默认传参，如需要特殊参数或者更多因子可以联系管理员评估                                                         |
-| [cb_price_chg](https://tushare.pro/wctapi/documents/246.md)        | 可转债转股价变动         | 债券专题               | 获取可转债转股价变动                                                                                                                                                                          |
-| [eco_cal](https://tushare.pro/wctapi/documents/233.md)              | 全球财经事件           | 债券专题               | 获取全球财经日历、包括经济事件数据更新                                                                                                                                                                 |
-| [yc_cb](https://tushare.pro/wctapi/documents/201.md)                | 国债收益率曲线          | 债券专题               | 获取中债收益率曲线，目前可获取中债国债收益率曲线即期和到期收益率曲线数据                                                                                                                                                |
-| [cb_daily](https://tushare.pro/wctapi/documents/187.md)             | 可转债行情            | 债券专题               | 获取可转债行情                                                                                                                                                                             |
-| [cb_issue](https://tushare.pro/wctapi/documents/186.md)             | 可转债发行            | 债券专题               | 获取可转债发行数据                                                                                                                                                                           |
-| [cb_basic](https://tushare.pro/wctapi/documents/185.md)             | 可转债基础信息          | 债券专题               | 获取可转债基本信息                                                                                                                                                                           |
-| [cb_share](https://tushare.pro/wctapi/documents/247.md)             | 可转债转股结果          | 债券专题               | 获取可转债转股结果                                                                                                                                                                           |
-| [fund_manager](https://tushare.pro/wctapi/documents/208.md)         | 基金经理             | 公募基金               | 获取公募基金经理数据，包括基金经理简历等数据                                                                                                                                                              |
-| [fund_share](https://tushare.pro/wctapi/documents/207.md)           | 基金规模             | 公募基金               | 获取基金规模数据，包含上海和深圳ETF基金                                                                                                                                                               |
-| [fund_portfolio](https://tushare.pro/wctapi/documents/121.md)       | 基金持仓             | 公募基金               | 获取公募基金持仓数据，季度更新                                                                                                                                                                     |
-| [fund_div](https://tushare.pro/wctapi/documents/120.md)             | 基金分红             | 公募基金               | 获取公募基金分红数据                                                                                                                                                                          |
-| [fund_nav](https://tushare.pro/wctapi/documents/119.md)             | 基金净值             | 公募基金               | 获取公募基金净值数据                                                                                                                                                                          |
-| [fund_company](https://tushare.pro/wctapi/documents/118.md)         | 基金管理人            | 公募基金               | 获取公募基金管理人列表                                                                                                                                                                         |
-| [fund_basic](https://tushare.pro/wctapi/documents/19.md)            | 基金列表             | 公募基金               | 获取公募基金数据列表，包括场内和场外基金                                                                                                                                                                |
-| [fund_factor_pro](https://tushare.pro/wctapi/documents/359.md)     | 基金技术面因子(专业版)     | 公募基金               | 获取场内基金每日技术面因子数据，用于跟踪场内基金当前走势情况，数据由Tushare社区自产，覆盖全历史；输出参数_bfq表示不复权，描述中说明了因子的默认传参，如需要特殊参数或者更多因子可以联系管理员评估                                                                             |
-| [fx_obasic](https://tushare.pro/wctapi/documents/178.md)            | 外汇基础信息(海外)       | 外汇数据               | 获取海外外汇基础信息，目前只有FXCM交易商的数据                                                                                                                                                           |
-| [fx_daily](https://tushare.pro/wctapi/documents/179.md)             | 外汇日线行情           | 外汇数据               | 获取外汇日线行情                                                                                                                                                                            |
-| [research_report](https://tushare.pro/wctapi/documents/415.md)      | 券商研究报告           | 大模型语料专题数据          | 获取券商研究报告-个股、行业等，历史数据从20170101开始提供，增量每天两次更新                                                                                                                                          |
-| [news](https://tushare.pro/wctapi/documents/143.md)                  | 新闻快讯(短讯)         | 大模型语料专题数据          | 获取主流新闻网站的快讯新闻数据,提供超过6年以上历史新闻。                                                                                                                                                       |
-| [cctv_news](https://tushare.pro/wctapi/documents/154.md)            | 新闻联播文字稿          | 大模型语料专题数据          | 获取新闻联播文字稿数据，数据开始于2017年。                                                                                                                                                             |
-| [anns_d](https://tushare.pro/wctapi/documents/176.md)               | 上市公司公告           | 大模型语料专题数据          | 获取全量公告数据，提供pdf下载URL                                                                                                                                                                 |
-| [irm_qa_sz](https://tushare.pro/wctapi/documents/367.md)           | 深证易互动问答          | 大模型语料专题数据          | <br />                                                                                                                                                                              |
-| [irm_qa_sh](https://tushare.pro/wctapi/documents/366.md)           | 上证e互动问答          | 大模型语料专题数据          | <br />                                                                                                                                                                              |
-| [major_news](https://tushare.pro/wctapi/documents/195.md)           | 新闻通讯(长篇)         | 大模型语料专题数据          | 获取长篇通讯信息，覆盖主要新闻资讯网站，提供超过8年历史新闻。                                                                                                                                                     |
-| [npr](https://tushare.pro/wctapi/documents/406.md)                   | 国家政策库            | 大模型语料专题数据          | 获取国家行政机关公开披露的各类法规、条例政策、批复、通知等文本数据。                                                                                                                                                  |
-| [cn_ppi](https://tushare.pro/wctapi/documents/245.md)               | 工业生产者出厂价格指数(PPI) | 宏观经济,国内宏观,价格指数     | 获取PPI工业生产者出厂价格指数数据                                                                                                                                                                  |
-| [cn_cpi](https://tushare.pro/wctapi/documents/228.md)               | 居民消费价格指数(CPI)    | 宏观经济,国内宏观,价格指数     | 获取CPI居民消费价格数据，包括全国、城市和农村的数据                                                                                                                                                         |
-| [shibor](https://tushare.pro/wctapi/documents/149.md)                | Shibor利率         | 宏观经济,国内宏观,利率数据     | shibor利率                                                                                                                                                                            |
-| [shibor_lpr](https://tushare.pro/wctapi/documents/151.md)           | LPR贷款基础利率        | 宏观经济,国内宏观,利率数据     | LPR贷款基础利率                                                                                                                                                                           |
-| [libor](https://tushare.pro/wctapi/documents/152.md)                 | Libor利率          | 宏观经济,国内宏观,利率数据     | Libor拆借利率                                                                                                                                                                           |
-| [shibor_quote](https://tushare.pro/wctapi/documents/150.md)         | Shibor报价数据       | 宏观经济,国内宏观,利率数据     | Shibor报价数据                                                                                                                                                                          |
-| [wz_index](https://tushare.pro/wctapi/documents/173.md)             | 温州民间借贷利率         | 宏观经济,国内宏观,利率数据     | 温州民间借贷利率，即温州指数                                                                                                                                                                      |
-| [hibor](https://tushare.pro/wctapi/documents/153.md)                 | Hibor利率          | 宏观经济,国内宏观,利率数据     | Hibor利率                                                                                                                                                                             |
-| [gz_index](https://tushare.pro/wctapi/documents/174.md)             | 广州民间借贷利率         | 宏观经济,国内宏观,利率数据     | 广州民间借贷利率                                                                                                                                                                            |
-| [cn_gdp](https://tushare.pro/wctapi/documents/227.md)               | 国内生产总值(GDP)      | 宏观经济,国内宏观,国民经济     | 获取国民经济之GDP数据                                                                                                                                                                        |
-| [cn_pmi](https://tushare.pro/wctapi/documents/325.md)               | 采购经理指数(PMI)      | 宏观经济,国内宏观,景气度      | 采购经理人指数                                                                                                                                                                             |
-| [sf_month](https://tushare.pro/wctapi/documents/310.md)             | 社融增量(月度)         | 宏观经济,国内宏观,金融,社会融资  | 获取月度社会融资数据                                                                                                                                                                          |
-| [cn_m](https://tushare.pro/wctapi/documents/242.md)                 | 货币供应量(月)         | 宏观经济,国内宏观,金融,货币供应量 | 获取货币供应量之月度数据                                                                                                                                                                        |
-| [us_tbr](https://tushare.pro/wctapi/documents/221.md)               | 短期国债利率           | 宏观经济,国际宏观,美国利率     | 获取美国短期国债利率数据                                                                                                                                                                        |
-| [us_trycr](https://tushare.pro/wctapi/documents/220.md)             | 国债实际收益率曲线利率      | 宏观经济,国际宏观,美国利率     | 国债实际收益率曲线利率                                                                                                                                                                         |
-| [us_tltr](https://tushare.pro/wctapi/documents/222.md)              | 国债长期利率           | 宏观经济,国际宏观,美国利率     | 国债长期利率                                                                                                                                                                              |
-| [us_trltr](https://tushare.pro/wctapi/documents/223.md)             | 国债长期利率平均值        | 宏观经济,国际宏观,美国利率     | 国债实际长期利率平均值                                                                                                                                                                         |
-| [us_tycr](https://tushare.pro/wctapi/documents/219.md)              | 国债收益率曲线利率        | 宏观经济,国际宏观,美国利率     | 获取美国每日国债收益率曲线利率                                                                                                                                                                     |
-| [rt_idx_min](https://tushare.pro/wctapi/documents/420.md)          | 指数实时分钟           | 指数专题               | 获取交易所指数实时分钟数据，包括1\~60min                                                                                                                                                            |
-| [idx_mins](https://tushare.pro/wctapi/documents/419.md)             | 指数历史分钟           | 指数专题               | 获取交易所指数分钟数据，支持1min/5min/15min/30min/60min行情，提供Python SDK和 http Restful API两种方式                                                                                                      |
-| [daily_info](https://tushare.pro/wctapi/documents/215.md)           | 沪深市场每日交易统计       | 指数专题               | 获取交易所股票交易统计，包括各板块明细                                                                                                                                                                 |
-| [index_global](https://tushare.pro/wctapi/documents/211.md)         | 国际主要指数           | 指数专题               | 获取国际主要指数日线行情                                                                                                                                                                        |
-| [index_classify](https://tushare.pro/wctapi/documents/181.md)       | 申万行业分类           | 指数专题               | 获取申万行业分类，可以获取申万2014年版本（28个一级分类，104个二级分类，227个三级分类）和2021年本版（31个一级分类，134个二级分类，346个三级分类）列表信息                                                                                            |
-| [sz_daily_info](https://tushare.pro/wctapi/documents/268.md)       | 深圳市场每日交易情况       | 指数专题               | 获取深圳市场每日交易概况                                                                                                                                                                        |
-| [index_dailybasic](https://tushare.pro/wctapi/documents/128.md)     | 大盘指数每日指标         | 指数专题               | 目前只提供上证综指，深证成指，上证50，中证500，中小板指，创业板指的每日指标数据                                                                                                                                          |
-| [rt_idx_k](https://tushare.pro/wctapi/documents/403.md)            | 指数实时日线           | 指数专题               | 获取交易所指数实时日线行情，支持按代码或代码通配符一次性提取全部交易所指数实时日k线行情                                                                                                                                        |
-| [index_weight](https://tushare.pro/wctapi/documents/96.md)          | 指数成分和权重          | 指数专题               | 获取各类指数成分和权重，**月度数据** ，建议输入参数里开始日期和结束日分别输入当月第一天和最后一天的日期。                                                                                                                             |
-| [ci_index_member](https://tushare.pro/wctapi/documents/373.md)     | 中信行业成分           | 指数专题               | 按三级分类提取中信行业成分，可提供某个分类的所有成分，也可按股票代码提取所属分类，参数灵活                                                                                                                                       |
-| [idx_factor_pro](https://tushare.pro/wctapi/documents/358.md)      | 指数技术面因子(专业版)     | 指数专题               | 获取指数每日技术面因子数据，用于跟踪指数当前走势情况，数据由Tushare社区自产，覆盖全历史；输出参数_bfq表示不复权描述中说明了因子的默认传参，如需要特殊参数或者更多因子可以联系管理员评估，指数包括大盘指数 申万行业指数 中信指数                                                             |
-| [index_member_all](https://tushare.pro/wctapi/documents/335.md)    | 申万行业成分(分级)       | 指数专题               | 按三级分类提取申万行业成分，可提供某个分类的所有成分，也可按股票代码提取所属分类，参数灵活                                                                                                                                       |
-| [rt_sw_k](https://tushare.pro/wctapi/documents/417.md)             | 申万实时行情           | 指数专题               | 获取申万行业指数的最新截面数据                                                                                                                                                                     |
-| [index_monthly](https://tushare.pro/wctapi/documents/172.md)        | 指数月线行情           | 指数专题               | 获取指数月线行情,每月更新一次                                                                                                                                                                     |
-| [ci_daily](https://tushare.pro/wctapi/documents/308.md)             | 中信行业指数日行情        | 指数专题               | 获取中信行业指数日线行情                                                                                                                                                                        |
-| [index_weekly](https://tushare.pro/wctapi/documents/171.md)         | 指数周线行情           | 指数专题               | 获取指数周线行情                                                                                                                                                                            |
-| [sw_daily](https://tushare.pro/wctapi/documents/327.md)             | 申万行业指数日行情        | 指数专题               | 获取申万行业日线行情（默认是申万2021版行情）                                                                                                                                                            |
-| [index_daily](https://tushare.pro/wctapi/documents/95.md)           | 指数日线行情           | 指数专题               | 获取指数每日行情，还可以通过bar接口获取。由于服务器压力，目前规则是单次调取最多取8000行记录，可以设置start和end日期补全。指数行情也可以通过**[通用行情接口](https://tushare.pro/document/2?doc_id=109)**获取数据．                                           |
-| [index_basic](https://tushare.pro/wctapi/documents/94.md)           | 指数基本信息           | 指数专题               | 获取指数基础信息。                                                                                                                                                                           |
-| [opt_mins](https://tushare.pro/wctapi/documents/341.md)             | 期权分钟行情           | 期权数据               | 获取全市场期权合约分钟数据，支持1min/5min/15min/30min/60min行情，提供Python SDK和 http Restful API两种方式。                                                                                                   |
-| [opt_daily](https://tushare.pro/wctapi/documents/159.md)            | 期权日线行情           | 期权数据               | 获取期权日线行情                                                                                                                                                                            |
-| [opt_basic](https://tushare.pro/wctapi/documents/158.md)            | 期权合约信息           | 期权数据               | 获取期权合约信息                                                                                                                                                                            |
-| [fut_weekly_detail](https://tushare.pro/wctapi/documents/216.md)   | 期货主要品种交易周报       | 期货数据               | 获取期货交易所主要品种每周交易统计信息，数据从2010年3月开始                                                                                                                                                    |
-| [ft_limit](https://tushare.pro/wctapi/documents/368.md)             | 期货合约涨跌停价格        | 期货数据               | 获取所有期货合约每天的涨跌停价格及最低保证金率，数据开始于2005年。                                                                                                                                                 |
-| [rt_fut_min](https://tushare.pro/wctapi/documents/340.md)          | 实时分钟行情           | 期货数据               | 获取全市场期货合约实时分钟数据，支持1min/5min/15min/30min/60min行情，提供Python SDK、 http Restful API和websocket三种方式，如果需要主力合约分钟，请先通过主力[mapping](https://tushare.pro/document/2?doc_id=189)接口获取对应的合约代码后提取分钟。 |
-| [fut_basic](https://tushare.pro/wctapi/documents/135.md)            | 合约信息             | 期货数据               | 获取期货合约列表数据                                                                                                                                                                          |
-| [trade_cal](https://tushare.pro/wctapi/documents/137.md)            | 交易日历             | 期货数据               | 获取各大期货交易所交易日历数据                                                                                                                                                                     |
-| [fut_daily](https://tushare.pro/wctapi/documents/138.md)            | 日线行情             | 期货数据               | 期货日线行情数据                                                                                                                                                                            |
-| [fut_holding](https://tushare.pro/wctapi/documents/139.md)          | 每日持仓排名           | 期货数据               | 获取每日成交持仓排名数据                                                                                                                                                                        |
-| [fut_wsr](https://tushare.pro/wctapi/documents/140.md)              | 仓单日报             | 期货数据               | 获取仓单日报数据，了解各仓库/厂库的仓单变化                                                                                                                                                              |
-| [fut_settle](https://tushare.pro/wctapi/documents/141.md)           | 每日结算参数           | 期货数据               | 获取每日结算参数数据，包括交易和交割费率等                                                                                                                                                               |
-| [index_daily](https://tushare.pro/wctapi/documents/155.md)          | 南华期货指数行情         | 期货数据               | 获取南华指数每日行情，指数行情也可以通过**[通用行情接口](https://tushare.pro/document/2?doc_id=109)**获取数据．                                                                                                    |
-| [fut_mapping](https://tushare.pro/wctapi/documents/189.md)          | 期货主力与连续合约        | 期货数据               | 获取期货主力（或连续）合约与月合约映射数据                                                                                                                                                               |
-| [ft_mins](https://tushare.pro/wctapi/documents/313.md)              | 历史分钟行情           | 期货数据               | 获取全市场期货合约分钟数据，支持1min/5min/15min/30min/60min行情，提供Python SDK和 http Restful API两种方式，如果需要主力合约分钟，请先通过主力[mapping](https://tushare.pro/document/2?doc_id=189)接口获取对应的合约代码后提取分钟。             |
-| [fut_weekly_monthly](https://tushare.pro/wctapi/documents/337.md)  | 期货周月线行情(每日更新)    | 期货数据               | 期货周/月线行情(每日更新)                                                                                                                                                                      |
-| [hk_cashflow](https://tushare.pro/wctapi/documents/391.md)          | 港股现金流量表          | 港股数据               | 获取港股上市公司现金流量表数据                                                                                                                                                                     |
-| [hk_balancesheet](https://tushare.pro/wctapi/documents/390.md)      | 港股资产负债表          | 港股数据               | 获取港股上市公司资产负债表                                                                                                                                                                       |
-| [hk_income](https://tushare.pro/wctapi/documents/389.md)            | 港股利润表            | 港股数据               | 获取港股上市公司财务利润表数据                                                                                                                                                                     |
-| [hk_fina_indicator](https://tushare.pro/wctapi/documents/388.md)   | 港股财务指标数据         | 港股数据               | 获取港股上市公司财务指标数据，为避免服务器压力，现阶段每次请求最多返回200条记录，可通过设置日期多次请求获取更多数据。                                                                                                                        |
-| [hk_adjfactor](https://tushare.pro/wctapi/documents/401.md)         | 港股复权因子           | 港股数据               | 获取港股每日复权因子数据，每天滚动刷新                                                                                                                                                                 |
-| [hk_daily_adj](https://tushare.pro/wctapi/documents/339.md)        | 港股复权行情           | 港股数据               | 获取港股复权行情，提供股票股本、市值和成交及换手多个数据指标                                                                                                                                                      |
-| [rt_hk_k](https://tushare.pro/wctapi/documents/383.md)             | 港股实时日线           | 港股数据               | 获取港股实时日k线行情，支持按股票代码及股票代码通配符一次性提取全部股票实时日k线行情                                                                                                                                         |
-| [hk_basic](https://tushare.pro/wctapi/documents/191.md)             | 港股基础信息           | 港股数据               | 获取港股列表信息                                                                                                                                                                            |
-| [hk_daily](https://tushare.pro/wctapi/documents/192.md)             | 港股日线行情           | 港股数据               | 获取港股每日增量和历史行情，每日18点左右更新当日数据                                                                                                                                                         |
-| [hk_mins](https://tushare.pro/wctapi/documents/304.md)              | 港股分钟行情           | 港股数据               | 港股分钟数据，支持1min/5min/15min/30min/60min行情，提供Python SDK和 http Restful API两种方式                                                                                                           |
-| [hk_tradecal](https://tushare.pro/wctapi/documents/250.md)          | 港股交易日历           | 港股数据               | 获取交易日历                                                                                                                                                                              |
-| [sge_daily](https://tushare.pro/wctapi/documents/285.md)            | 上海黄金现货日行情        | 现货数据               | 获取上海黄金交易所现货合约日线行情                                                                                                                                                                   |
-| [sge_basic](https://tushare.pro/wctapi/documents/284.md)            | 上海黄金基础信息         | 现货数据               | 获取上海黄金交易所现货合约基础信息                                                                                                                                                                   |
-| [us_fina_indicator](https://tushare.pro/wctapi/documents/393.md)   | 美股财务指标数据         | 美股数据               | 获取美股上市公司财务指标数据，目前只覆盖主要美股和中概股。为避免服务器压力，现阶段每次请求最多返回200条记录，可通过设置日期多次请求获取更多数据。                                                                                                          |
-| [us_adjfactor](https://tushare.pro/wctapi/documents/402.md)         | 美股复权因子           | 美股数据               | 获取美股每日复权因子数据，在每天美股收盘后滚动刷新                                                                                                                                                           |
-| [us_cashflow](https://tushare.pro/wctapi/documents/396.md)          | 美股现金流量表          | 美股数据               | 获取美股上市公司现金流量表数据（目前只覆盖主要美股和中概股）                                                                                                                                                      |
-| [us_balancesheet](https://tushare.pro/wctapi/documents/395.md)      | 美股资产负债表          | 美股数据               | 获取美股上市公司资产负债表（目前只覆盖主要美股和中概股）                                                                                                                                                        |
-| [us_income](https://tushare.pro/wctapi/documents/394.md)            | 美股利润表            | 美股数据               | 获取美股上市公司财务利润表数据（目前只覆盖主要美股和中概股）                                                                                                                                                      |
-| [us_daily](https://tushare.pro/wctapi/documents/254.md)             | 美股日线行情           | 美股数据               | 获取美股行情（未复权），包括全部股票全历史行情，以及重要的市场和估值指标                                                                                                                                                |
-| [us_tradecal](https://tushare.pro/wctapi/documents/253.md)          | 美股交易日历           | 美股数据               | 获取美股交易日历信息                                                                                                                                                                          |
-| [us_basic](https://tushare.pro/wctapi/documents/252.md)             | 美股基础信息           | 美股数据               | 获取美股列表信息                                                                                                                                                                            |
-| [us_daily_adj](https://tushare.pro/wctapi/documents/338.md)        | 美股复权行情           | 美股数据               | 获取美股复权行情，支持美股全市场股票，提供股本、市值、复权因子和成交信息等多个数据指标                                                                                                                                         |
-| [margin_secs](https://tushare.pro/wctapi/documents/326.md)          | 融资融券标的(盘前)       | 股票数据,两融及转融通        | 获取沪深京三大交易所融资融券标的（包括ETF），每天盘前更新                                                                                                                                                      |
-| [slb_len](https://tushare.pro/wctapi/documents/331.md)              | 转融资交易汇总          | 股票数据,两融及转融通        | 转融通融资汇总                                                                                                                                                                             |
-| [slb_sec](https://tushare.pro/wctapi/documents/332.md)              | 转融券交易汇总(停)       | 股票数据,两融及转融通        | 转融通转融券交易汇总                                                                                                                                                                          |
-| [slb_sec_detail](https://tushare.pro/wctapi/documents/333.md)      | 转融券交易明细(停)       | 股票数据,两融及转融通        | 转融券交易明细                                                                                                                                                                             |
-| [margin_detail](https://tushare.pro/wctapi/documents/59.md)         | 融资融券交易明细         | 股票数据,两融及转融通        | 获取沪深两市每日融资融券明细                                                                                                                                                                      |
-| [margin](https://tushare.pro/wctapi/documents/58.md)                 | 融资融券交易汇总         | 股票数据,两融及转融通        | 获取融资融券每日交易汇总数据                                                                                                                                                                      |
-| [slb_len_mm](https://tushare.pro/wctapi/documents/334.md)          | 做市借券交易汇总(停)      | 股票数据,两融及转融通        | 做市借券交易汇总                                                                                                                                                                            |
-| [repurchase](https://tushare.pro/wctapi/documents/124.md)            | 股票回购             | 股票数据,参考数据          | 获取上市公司回购股票数据                                                                                                                                                                        |
-| [pledge_stat](https://tushare.pro/wctapi/documents/110.md)          | 股权质押统计数据         | 股票数据,参考数据          | 获取股票质押统计数据                                                                                                                                                                          |
-| [share_float](https://tushare.pro/wctapi/documents/160.md)          | 限售股解禁            | 股票数据,参考数据          | 获取限售股解禁                                                                                                                                                                             |
-| [block_trade](https://tushare.pro/wctapi/documents/161.md)          | 大宗交易             | 股票数据,参考数据          | 大宗交易                                                                                                                                                                                |
-| [stk_account](https://tushare.pro/wctapi/documents/164.md)          | 股票开户数据(停)        | 股票数据,参考数据          | 获取股票账户开户数据，统计周期为一周                                                                                                                                                                  |
-| [stk_account_old](https://tushare.pro/wctapi/documents/165.md)     | 股票开户数据(旧)        | 股票数据,参考数据          | 获取股票账户开户数据旧版格式数据，数据从2008年1月开始，到2015年5月29，新数据请通过[股票开户数据](https://tushare.pro/document/2?doc_id=164)获取。                                                                               |
-| [stk_holdernumber](https://tushare.pro/wctapi/documents/166.md)     | 股东人数             | 股票数据,参考数据          | 获取上市公司股东户数数据，数据不定期公布                                                                                                                                                                |
-| [stk_holdertrade](https://tushare.pro/wctapi/documents/175.md)      | 股东增减持            | 股票数据,参考数据          | 获取上市公司增减持数据，了解重要股东近期及历史上的股份增减变化                                                                                                                                                     |
-| [top10_holders](https://tushare.pro/wctapi/documents/61.md)         | 前十大股东            | 股票数据,参考数据          | 获取上市公司前十大股东数据，包括持有数量和比例等信息                                                                                                                                                          |
-| [pledge_detail](https://tushare.pro/wctapi/documents/111.md)        | 股权质押明细数据         | 股票数据,参考数据          | 获取股票质押明细数据                                                                                                                                                                          |
-| [top10_floatholders](https://tushare.pro/wctapi/documents/62.md)    | 前十大流通股东          | 股票数据,参考数据          | 获取上市公司前十大流通股东数据                                                                                                                                                                     |
-| [st](https://tushare.pro/wctapi/documents/423.md)                    | ST风险警示板股票        | 股票数据,基础数据          | ST风险警示板股票列表                                                                                                                                                                         |
-| [stock_hsgt](https://tushare.pro/wctapi/documents/398.md)           | 沪深港通股票列表         | 股票数据,基础数据          | 获取沪深港通股票列表                                                                                                                                                                          |
-| [stock_st](https://tushare.pro/wctapi/documents/397.md)             | ST股票列表           | 股票数据,基础数据          | 获取ST股票列表，可根据交易日期获取历史上每天的ST列表                                                                                                                                                        |
-| [bse_mapping](https://tushare.pro/wctapi/documents/375.md)          | 北交所新旧代码对照        | 股票数据,基础数据          | 获取北交所股票代码变更后新旧代码映射表数据                                                                                                                                                               |
-| [stk_premarket](https://tushare.pro/wctapi/documents/329.md)        | 每日股本(盘前)         | 股票数据,基础数据          | 每日开盘前获取当日股票的股本情况，包括总股本和流通股本，涨跌停价格等。                                                                                                                                                 |
-| [new_share](https://tushare.pro/wctapi/documents/123.md)            | IPO新股上市          | 股票数据,基础数据          | 获取新股上市列表数据                                                                                                                                                                          |
-| [stk_rewards](https://tushare.pro/wctapi/documents/194.md)          | 管理层薪酬和持股         | 股票数据,基础数据          | 获取上市公司管理层薪酬和持股                                                                                                                                                                      |
-| [stk_managers](https://tushare.pro/wctapi/documents/193.md)         | 上市公司管理层          | 股票数据,基础数据          | 获取上市公司管理层                                                                                                                                                                           |
-| [stock_company](https://tushare.pro/wctapi/documents/112.md)        | 上市公司基本信息         | 股票数据,基础数据          | 获取上市公司基础信息，单次提取4500条，可以根据交易所分批提取                                                                                                                                                    |
-| [namechange](https://tushare.pro/wctapi/documents/100.md)            | 股票曾用名            | 股票数据,基础数据          | 历史名称变更记录                                                                                                                                                                            |
-| [trade_cal](https://tushare.pro/wctapi/documents/26.md)             | 交易日历             | 股票数据,基础数据          | 获取各大交易所交易日历数据,默认提取的是上交所                                                                                                                                                             |
-| [stock_basic](https://tushare.pro/wctapi/documents/25.md)           | 股票列表             | 股票数据,基础数据          | 获取基础信息数据，包括股票代码、名称、上市日期、退市日期等                                                                                                                                                       |
-| [bak_basic](https://tushare.pro/wctapi/documents/262.md)            | 股票历史列表           | 股票数据,基础数据          | 获取备用基础列表，数据从2016年开始                                                                                                                                                                 |
-| [dc_daily](https://tushare.pro/wctapi/documents/382.md)             | 东财概念和行业指数行情      | 股票数据,打板专题数据        | 获取东财概念板块、行业指数板块、地域板块行情数据，历史数据开始于2020年                                                                                                                                               |
-| [dc_hot](https://tushare.pro/wctapi/documents/321.md)               | 东方财富App热榜        | 股票数据,打板专题数据        | 获取东方财富App热榜数据，包括A股市场、ETF基金、港股市场、美股市场等等，每日盘中提取4次，收盘后4次，最晚22点提取一次。                                                                                                                    |
-| [limit_list_d](https://tushare.pro/wctapi/documents/298.md)        | 涨跌停和炸板数据         | 股票数据,打板专题数据        | 获取A股每日涨跌停、炸板数据情况，数据从2020年开始（不提供ST股票的统计）                                                                                                                                             |
-| [hm_list](https://tushare.pro/wctapi/documents/311.md)              | 市场游资最全名录         | 股票数据,打板专题数据        | 获取游资分类名录信息                                                                                                                                                                          |
-| [kpl_list](https://tushare.pro/wctapi/documents/347.md)             | 榜单数据(开盘啦)        | 股票数据,打板专题数据        | 获取开盘啦涨停、跌停、炸板等榜单数据                                                                                                                                                                  |
-| [ths_member](https://tushare.pro/wctapi/documents/261.md)           | 同花顺行业概念成分        | 股票数据,打板专题数据        | 获取同花顺概念板块成分列表注：数据版权归属同花顺，如做商业用途，请主动联系同花顺。                                                                                                                                           |
-| [ths_daily](https://tushare.pro/wctapi/documents/260.md)            | 同花顺概念和行业指数行情     | 股票数据,打板专题数据        | 获取同花顺板块指数行情。注：数据版权归属同花顺，如做商业用途，请主动联系同花顺，如需帮助请联系微信：waditu_a                                                                                                                         |
-| [ths_index](https://tushare.pro/wctapi/documents/259.md)            | 同花顺行业概念板块        | 股票数据,打板专题数据        | 获取同花顺板块指数。注：数据版权归属同花顺，如做商业用途，请主动联系同花顺，如需帮助请联系微信：waditu_a                                                                                                                           |
-| [top_inst](https://tushare.pro/wctapi/documents/107.md)             | 龙虎榜机构交易单         | 股票数据,打板专题数据        | 龙虎榜机构成交明细                                                                                                                                                                           |
-| [kpl_concept_cons](https://tushare.pro/wctapi/documents/351.md)    | 题材成分(开盘啦)        | 股票数据,打板专题数据        | 获取开盘啦概念题材的成分股                                                                                                                                                                       |
-| [limit_list_ths](https://tushare.pro/wctapi/documents/355.md)      | 同花顺涨跌停榜单         | 股票数据,打板专题数据        | 获取同花顺每日涨跌停榜单数据，历史数据从20231101开始提供，增量每天16点左右更新                                                                                                                                        |
-| [limit_step](https://tushare.pro/wctapi/documents/356.md)           | 涨停股票连板天梯         | 股票数据,打板专题数据        | 获取每天连板个数晋级的股票，可以分析出每天连续涨停进阶个数，判断强势热度                                                                                                                                                |
-| [limit_cpt_list](https://tushare.pro/wctapi/documents/357.md)      | 涨停最强板块统计         | 股票数据,打板专题数据        | 获取每天涨停股票最多最强的概念板块，可以分析强势板块的轮动，判断资金动向                                                                                                                                                |
-| [dc_index](https://tushare.pro/wctapi/documents/362.md)             | 东方财富概念板块         | 股票数据,打板专题数据        | 获取东方财富每个交易日的概念板块数据，支持按日期查询                                                                                                                                                          |
-| [dc_member](https://tushare.pro/wctapi/documents/363.md)            | 东方财富概念成分         | 股票数据,打板专题数据        | 获取东方财富板块每日成分数据，可以根据概念板块代码和交易日期，获取历史成分                                                                                                                                               |
-| [stk_auction](https://tushare.pro/wctapi/documents/369.md)          | 开盘竞价成交(当日)       | 股票数据,打板专题数据        | 获取当日个股和ETF的集合竞价成交情况，每天9点25\~29分之间可以获取当日的集合竞价成交数据                                                                                                                                    |
-| [tdx_index](https://tushare.pro/wctapi/documents/376.md)            | 通达信板块信息          | 股票数据,打板专题数据        | 获取通达信板块基础信息，包括概念板块、行业、风格、地域等                                                                                                                                                        |
-| [top_list](https://tushare.pro/wctapi/documents/106.md)             | 龙虎榜每日统计单         | 股票数据,打板专题数据        | 龙虎榜每日交易明细                                                                                                                                                                           |
-| [tdx_member](https://tushare.pro/wctapi/documents/377.md)           | 通达信板块成分          | 股票数据,打板专题数据        | 获取通达信各板块成分股信息                                                                                                                                                                       |
-| [tdx_daily](https://tushare.pro/wctapi/documents/378.md)            | 通达信板块行情          | 股票数据,打板专题数据        | 获取通达信各板块行情，包括成交和估值等数据                                                                                                                                                               |
-| [hm_detail](https://tushare.pro/wctapi/documents/312.md)            | 游资交易每日明细         | 股票数据,打板专题数据        | 获取每日游资交易明细，数据开始于2022年8。游资分类名录，请点击<a href="https://tushare.pro/document/2?doc_id=311">游资名录</a>                                                                                       |
-| [ths_hot](https://tushare.pro/wctapi/documents/320.md)              | 同花顺App热榜数        | 股票数据,打板专题数据        | 获取同花顺App热榜数据，包括热股、概念板块、ETF、可转债、港美股等等，每日盘中提取4次，收盘后4次，最晚22点提取一次。                                                                                                                      |
-| [stk_nineturn](https://tushare.pro/wctapi/documents/364.md)         | 神奇九转指标           | 股票数据,特色数据          | 神奇九转（又称“九转序列”）是一种基于技术分析的股票趋势反转指标，其思想来源于技术分析大师汤姆·迪马克（Tom DeMark）的TD序列。该指标的核心功能是通过识别股价在上涨或下跌过程中连续9天的特定走势，来判断股价的潜在反转点，从而帮助投资者提高抄底和逃顶的成功率，日线级别配合60min的九转效果更好，数据从20230101开始。             |
-| [hk_hold](https://tushare.pro/wctapi/documents/188.md)              | 沪深股通持股明细         | 股票数据,特色数据          | 获取沪深港股通持股明细，数据来源港交所。                                                                                                                                                                |
-| [broker_recommend](https://tushare.pro/wctapi/documents/267.md)     | 券商月度金股           | 股票数据,特色数据          | 获取券商月度金股，一般1日\~3日内更新当月数据                                                                                                                                                            |
-| [ccass_hold_detail](https://tushare.pro/wctapi/documents/274.md)   | 中央结算系统持股明细       | 股票数据,特色数据          | 获取中央结算系统机构席位持股明细，数据覆盖**全历史**，根据交易所披露时间，当日数据在下一交易日早上9点前完成                                                                                                                            |
-| [stk_surv](https://tushare.pro/wctapi/documents/275.md)             | 机构调研数据           | 股票数据,特色数据          | 获取上市公司机构调研记录数据                                                                                                                                                                      |
-| [report_rc](https://tushare.pro/wctapi/documents/292.md)            | 券商盈利预测数据         | 股票数据,特色数据          | 获取券商（卖方）每天研报的盈利预测数据，数据从2010年开始，每晚19\~22点更新当日数据                                                                                                                                      |
-| [cyq_perf](https://tushare.pro/wctapi/documents/293.md)             | 每日筹码及胜率          | 股票数据,特色数据          | 获取A股每日筹码平均成本和胜率情况，每天18\~19点左右更新，数据从2018年开始                                                                                                                                          |
-| [cyq_chips](https://tushare.pro/wctapi/documents/294.md)            | 每日筹码分布           | 股票数据,特色数据          | 获取A股每日的筹码分布情况，提供各价位占比，数据从2018年开始，每天18\~19点之间更新当日数据                                                                                                                                  |
-| [ccass_hold](https://tushare.pro/wctapi/documents/295.md)           | 中央结算系统持股统计       | 股票数据,特色数据          | 获取中央结算系统持股汇总数据，覆盖全部历史数据，根据交易所披露时间，当日数据在下一交易日早上9点前完成入库                                                                                                                               |
-| [stk_auction_o](https://tushare.pro/wctapi/documents/353.md)       | 股票开盘集合竞价数据       | 股票数据,特色数据          | 股票开盘9:30集合竞价数据，每天盘后更新                                                                                                                                                               |
-| [stk_auction_c](https://tushare.pro/wctapi/documents/354.md)       | 股票收盘集合竞价数据       | 股票数据,特色数据          | 股票收盘15:00集合竞价数据，每天盘后更新                                                                                                                                                              |
-| [stk_ah_comparison](https://tushare.pro/wctapi/documents/399.md)   | AH股比价            | 股票数据,特色数据          | AH股比价数据，可根据交易日期获取历史                                                                                                                                                                 |
-| [stk_factor_pro](https://tushare.pro/wctapi/documents/328.md)      | 股票技术面因子(专业版)     | 股票数据,特色数据          | 获取股票每日技术面因子数据，用于跟踪股票当前走势情况，数据由Tushare社区自产，覆盖全历史；输出参数_bfq表示不复权，_qfq表示前复权 _hfq表示后复权，描述中说明了因子的默认传参，如需要特殊参数或者更多因子可以联系管理员评估                                                           |
-| [daily](https://tushare.pro/wctapi/documents/27.md)                  | 历史日线             | 股票数据,行情数据          | 获取股票行情数据，或通过**[通用行情接口](https://tushare.pro/document/2?doc_id=109)**获取数据，包含了前后复权数据                                                                                                   |
-| [pro_bar](https://tushare.pro/wctapi/documents/146.md)              | 复权行情             | 股票数据,行情数据          | <br />                                                                                                                                                                              |
-| [monthly](https://tushare.pro/wctapi/documents/145.md)               | 月线行情             | 股票数据,行情数据          | 获取A股月线数据                                                                                                                                                                            |
-| [rt_min](https://tushare.pro/wctapi/documents/374.md)               | 实时分钟             | 股票数据,行情数据          | 获取全A股票实时分钟数据，包括1\~60min                                                                                                                                                             |
-| [rt_k](https://tushare.pro/wctapi/documents/372.md)                 | 实时日线             | 股票数据,行情数据          | 获取实时日k线行情，支持按股票代码及股票代码通配符一次性提取全部股票实时日k线行情                                                                                                                                           |
-| [stk_mins](https://tushare.pro/wctapi/documents/370.md)             | 历史分钟             | 股票数据,行情数据          | 获取A股分钟数据，支持1min/5min/15min/30min/60min行情，提供Python SDK和 http Restful API两种方式                                                                                                         |
-| [stk_week_month_adj](https://tushare.pro/wctapi/documents/365.md) | 周月线复权行情(每日更新)    | 股票数据,行情数据          | 股票周/月线行情(复权--每日更新)                                                                                                                                                                  |
-| [stk_weekly_monthly](https://tushare.pro/wctapi/documents/336.md)  | 周月线行情(每日更新)      | 股票数据,行情数据          | 股票周/月线行情(每日更新)                                                                                                                                                                      |
-| [bak_daily](https://tushare.pro/wctapi/documents/255.md)            | 备用行情             | 股票数据,行情数据          | 获取备用行情，包括特定的行情指标(数据从2017年中左右开始，早期有几天数据缺失，近期正常)                                                                                                                                      |
-| [weekly](https://tushare.pro/wctapi/documents/144.md)                | 周线行情             | 股票数据,行情数据          | 获取A股周线行情，本接口每周最后一个交易日更新，如需要使用每天更新的周线数据，请使用[日度更新的周线行情接口](https://tushare.pro/document/2?doc_id=336)。                                                                                 |
-| [suspend_d](https://tushare.pro/wctapi/documents/214.md)            | 每日停复牌信息          | 股票数据,行情数据          | 按日期方式获取股票每日停复牌信息                                                                                                                                                                    |
-| [ggt_daily](https://tushare.pro/wctapi/documents/196.md)            | 港股通每日成交统计        | 股票数据,行情数据          | 获取港股通每日成交信息，数据从2014年开始                                                                                                                                                              |
-| [stk_limit](https://tushare.pro/wctapi/documents/183.md)            | 每日涨跌停价格          | 股票数据,行情数据          | 获取全市场（包含A/B股和基金）每日涨跌停价格，包括涨停价格，跌停价格等，每个交易日8点40左右更新当日股票涨跌停价格。                                                                                                                        |
-| [pro_bar](https://tushare.pro/wctapi/documents/109.md)              | 通用行情接口           | 股票数据,行情数据          | <br />                                                                                                                                                                              |
-| [ggt_top10](https://tushare.pro/wctapi/documents/49.md)             | 港股通十大成交股         | 股票数据,行情数据          | 获取港股通每日成交数据，其中包括沪市、深市详细数据，每天18\~20点之间完成当日更新                                                                                                                                         |
-| [hsgt_top10](https://tushare.pro/wctapi/documents/48.md)            | 沪深股通十大成交股        | 股票数据,行情数据          | 获取沪股通、深股通每日前十大成交详细数据，每天18\~20点之间完成当日更新                                                                                                                                              |
-| [daily_basic](https://tushare.pro/wctapi/documents/32.md)           | 每日指标             | 股票数据,行情数据          | 获取全部股票每日重要的基本面指标，可用于选股分析、报表展示等。单次请求最大返回6000条数据，可按日线循环提取全部历史。                                                                                                                        |
-| [adj_factor](https://tushare.pro/wctapi/documents/28.md)            | 复权因子             | 股票数据,行情数据          | 本接口由Tushare自行生产，获取股票复权因子，可提取单只股票全部历史复权因子，也可以提取单日全部股票的复权因子。                                                                                                                          |
-| [ggt_monthly](https://tushare.pro/wctapi/documents/197.md)          | 港股通每月成交统计        | 股票数据,行情数据          | 港股通每月成交信息，数据从2014年开始                                                                                                                                                                |
-| [income](https://tushare.pro/wctapi/documents/33.md)                 | 利润表              | 股票数据,财务数据          | 获取上市公司财务利润表数据                                                                                                                                                                       |
-| [cashflow](https://tushare.pro/wctapi/documents/44.md)               | 现金流量表            | 股票数据,财务数据          | 获取上市公司现金流量表                                                                                                                                                                         |
-| [balancesheet](https://tushare.pro/wctapi/documents/36.md)           | 资产负债表            | 股票数据,财务数据          | 获取上市公司资产负债表                                                                                                                                                                         |
-| [express](https://tushare.pro/wctapi/documents/46.md)                | 业绩快报             | 股票数据,财务数据          | 获取上市公司业绩快报                                                                                                                                                                          |
-| [fina_indicator](https://tushare.pro/wctapi/documents/79.md)        | 财务指标数据           | 股票数据,财务数据          | 获取上市公司财务指标数据，为避免服务器压力，现阶段每次请求最多返回100条记录，可通过设置日期多次请求获取更多数据。                                                                                                                          |
-| [fina_mainbz](https://tushare.pro/wctapi/documents/81.md)           | 主营业务构成           | 股票数据,财务数据          | 获得上市公司主营业务构成，分地区和产品两种方式                                                                                                                                                             |
-| [dividend](https://tushare.pro/wctapi/documents/103.md)              | 分红送股数据           | 股票数据,财务数据          | 分红送股数据                                                                                                                                                                              |
-| [disclosure_date](https://tushare.pro/wctapi/documents/162.md)      | 财报披露日期表          | 股票数据,财务数据          | 获取财报披露计划日期                                                                                                                                                                          |
-| [forecast](https://tushare.pro/wctapi/documents/45.md)               | 业绩预告             | 股票数据,财务数据          | 获取业绩预告数据                                                                                                                                                                            |
-| [fina_audit](https://tushare.pro/wctapi/documents/80.md)            | 财务审计意见           | 股票数据,财务数据          | 获取上市公司定期财务审计意见数据                                                                                                                                                                    |
-| [moneyflow_hsgt](https://tushare.pro/wctapi/documents/47.md)        | 沪深港通资金流向         | 股票数据,资金流向数据        | 获取沪股通、深股通、港股通每日资金流向数据，每次最多返回300条记录，总量不限制。                                                                                                                                           |
-| [moneyflow](https://tushare.pro/wctapi/documents/170.md)             | 个股资金流向           | 股票数据,资金流向数据        | 获取沪深A股票资金流向数据，分析大单小单成交情况，用于判别资金动向，数据开始于2010年。                                                                                                                                       |
-| [moneyflow_ind_ths](https://tushare.pro/wctapi/documents/343.md)   | 行业资金流向(THS)      | 股票数据,资金流向数据        | 获取同花顺行业资金流向，每日盘后更新                                                                                                                                                                  |
-| [moneyflow_ind_dc](https://tushare.pro/wctapi/documents/344.md)    | 板块资金流向(DC)       | 股票数据,资金流向数据        | 获取东方财富板块资金流向，每天盘后更新                                                                                                                                                                 |
-| [moneyflow_mkt_dc](https://tushare.pro/wctapi/documents/345.md)    | 大盘资金流向(DC)       | 股票数据,资金流向数据        | 获取东方财富大盘资金流向数据，每日盘后更新                                                                                                                                                               |
-| [moneyflow_ths](https://tushare.pro/wctapi/documents/348.md)        | 个股资金流向(THS)      | 股票数据,资金流向数据        | 获取同花顺个股资金流向数据，每日盘后更新                                                                                                                                                                |
-| [moneyflow_dc](https://tushare.pro/wctapi/documents/349.md)         | 个股资金流向(DC)       | 股票数据,资金流向数据        | 获取东方财富个股资金流向数据，每日盘后更新，数据开始于20230911                                                                                                                                                 |
-| [moneyflow_cnt_ths](https://tushare.pro/wctapi/documents/371.md)   | 板块资金流向(THS)      | 股票数据,资金流向数据        | 获取同花顺概念板块每日资金流向                                                                                                                                                                     |
-| [film_record](https://tushare.pro/wctapi/documents/156.md)          | 全国电影剧本备案数据       | 行业经济,TMT行业         | 获取全国电影剧本备案的公示数据                                                                                                                                                                     |
-| [teleplay_record](https://tushare.pro/wctapi/documents/180.md)      | 全国电视剧备案公示数据      | 行业经济,TMT行业         | 获取2009年以来全国拍摄制作电视剧备案公示数据                                                                                                                                                            |
-| [tmt_twincomedetail](https://tushare.pro/wctapi/documents/87.md)    | 台湾电子产业月营收明细      | 行业经济,TMT行业         | 获取台湾TMT行业上市公司各类产品月度营收情况。                                                                                                                                                            |
-| [tmt_twincome](https://tushare.pro/wctapi/documents/88.md)          | 台湾电子产业月营收        | 行业经济,TMT行业         | 获取台湾TMT电子产业领域各类产品月度营收数据。                                                                                                                                                            |
-| [bo_monthly](https://tushare.pro/wctapi/documents/113.md)           | 电影月度票房           | 行业经济,TMT行业         | 获取电影月度票房数据                                                                                                                                                                          |
-| [bo_daily](https://tushare.pro/wctapi/documents/115.md)             | 电影日度票房           | 行业经济,TMT行业         | 获取电影日度票房                                                                                                                                                                            |
-| [bo_cinema](https://tushare.pro/wctapi/documents/116.md)            | 影院日度票房           | 行业经济,TMT行业         | 获取每日各影院的票房数据                                                                                                                                                                        |
-| [bo_weekly](https://tushare.pro/wctapi/documents/114.md)            | 电影周度票房           | 行业经济,TMT行业         | 获取周度票房数据                                                                                                                                                                            |
-| [fund_sales_ratio](https://tushare.pro/wctapi/documents/265.md)    | 各渠道公募基金销售保有规模占比  | 财富管理,基金销售行业数据      | 获取各渠道公募基金销售保有规模占比数据，年度更新                                                                                                                                                            |
-| [fund_sales_vol](https://tushare.pro/wctapi/documents/266.md)      | 销售机构公募基金销售保有规模   | 财富管理,基金销售行业数据      | 获取销售机构公募基金销售保有规模数据，本数据从2021年Q1开始公布，季度更新                                                                                                                                             |
+常用接口：
 
+- `daily`
+- `pro_bar`
+- `weekly`
+- `monthly`
+- `stk_mins`
+- `rt_k` / `rt_min`（如确需实时口径且权限允许）
+- `daily_basic`
+
+### 2. 基本资料 / 标的识别
+
+典型问题：
+
+- 这是什么公司 / 什么指数 / 什么基金
+- 是创业板吗 / 是 ST 吗 / 什么时候上市
+
+常用接口：
+
+- `stock_basic`
+- `fund_basic`
+- `index_basic`
+- `stock_company`
+- `stock_st` / `st`
+
+### 3. 财务 / 公司质量
+
+典型问题：
+
+- 最近几个季度利润趋势
+- 最近几个季度营收和净利润趋势
+- 财务质量怎么样
+- ROE / 毛利率 / 现金流如何
+
+常用接口：
+
+- `income`（营收 / 净利润趋势优先）
+- `fina_indicator`（ROE / 毛利率 / 净利率等质量指标补充）
+- `balancesheet`
+- `cashflow`
+- `forecast`
+- `express`
+- `disclosure_date`
+
+### 4. 估值 / 基本面指标
+
+典型问题：
+
+- 现在估值高不高
+- 谁更便宜
+- PE / PB / 股息率如何
+
+常用接口：
+
+- `daily_basic`
+- `fina_indicator`
+
+### 5. 资金流 / 市场行为
+
+典型问题：
+
+- 北向最近买什么
+- 主力资金流向
+- 龙虎榜情况
+
+常用接口：
+
+- `moneyflow`
+- `moneyflow_hsgt`
+- `hsgt_top10`
+- `top_list`
+- `top_inst`
+- `moneyflow_ind_dc`
+- `moneyflow_mkt_dc`
+
+### 6. 板块 / 指数 / 主题
+
+典型问题：
+
+- 最近哪个板块最强
+- 行业轮动如何
+- 某板块有哪些成分股
+
+常用接口：
+
+- `index_basic`
+- `index_daily`
+- `index_classify`
+- `index_member_all`
+- `sw_daily`
+- `ths_index`
+- `ths_member`
+- `dc_index`
+- `dc_member`
+
+### 7. 打板 / 情绪 / 活跃度
+
+典型问题：
+
+- 今天涨停梯队
+- 连板结构
+- 炸板率 / 情绪强弱
+
+常用接口：
+
+- `limit_list_d`
+- `limit_step`
+- `kpl_list`
+- `dc_hot`
+- `ths_hot`
+
+### 8. 公告 / 新闻 / 研报 / 政策
+
+典型问题：
+
+- 最近有什么公告或催化
+- 最近有什么研究报告
+- 最近政策面发生了什么
+
+常用接口：
+
+- `anns_d`
+- `news`
+- `major_news`
+- `research_report`
+- `npr`
+- `irm_qa_sh`
+- `irm_qa_sz`
+
+### 9. 宏观 / 跨市场
+
+典型问题：
+
+- CPI / PMI / 社融 / M2
+- 利率与收益率曲线
+- 港股 / 美股 / 美债数据
+
+常用接口：
+
+- `cn_cpi`
+- `cn_ppi`
+- `cn_pmi`
+- `cn_gdp`
+- `cn_m`
+- `sf_month`
+- `shibor`
+- `shibor_lpr`
+- `us_tycr`
+- `us_daily`
+- `hk_daily`
+- `index_global`
+
+### 10. 导出 / 研究准备
+
+典型问题：
+
+- 导出某标的一段时间行情
+- 生成回测用数据表
+- 输出 CSV / parquet
+
+常用接口：
+
+- 取决于上游任务，核心是统一输出规则与命名规范
+
+***
+
+## Entity resolution rules
+
+### 标的解析
+
+- 优先识别股票名、股票代码、指数名、ETF 名、基金名
+- 对中文简称先尝试匹配标准对象
+- 若重名或多解，列出候选并做最小澄清
+- 证券代码内部统一为标准格式，如：`600519.SH`、`000001.SZ`
+
+### 市场识别
+
+- 默认先按 A 股理解，除非用户明确提到港股 / 美股 / 基金 / 债券 / 期货
+- 指数、ETF、个股要分开判断，不要混用接口
+
+### 时间默认值
+
+若用户没有明确给时间范围，使用合理默认：
+
+- “最近走势” → 默认近 20 个交易日
+- “这段时间 / 最近一段时间” → 默认近 3 个月
+- “财报 / 业绩” → 默认最近 8 个季度 + 最近年度
+- “资金流最近如何” → 默认近 5～20 个交易日，按任务粒度调整
+- “宏观最近如何” → 默认看最近 6～12 期
+
+### 板块口径默认值
+
+若用户只说“板块 / 行业 / 概念”但未指定分类体系：
+
+- 行业优先用申万 / 中信等较稳定口径
+- 概念优先同花顺 / 东方财富等主题口径
+- 若结论依赖具体口径差异，要明确说明使用了哪种分类
+
+***
+
+## Input normalization rules
+
+在请求数据前先做规范化：
+
+- 日期统一为 `YYYYMMDD`
+- 检查 `start_date <= end_date`
+- 用户输入未来日期时，自动裁剪到最近可用日期并提示
+- 裸代码如 `000001` 不要盲猜，能补全则说明补全规则，不能补全则澄清
+- 对冲突参数（如 `trade_date` 与 `start_date/end_date` 同时给）要先裁决，不要直接乱传
+
+***
+
+## Data retrieval rules
+
+### 文档先行
+
+在写请求代码前，先确认：
+
+- 接口名是否正确
+- 必填参数
+- 可选参数
+- 返回字段
+- 积分 / 频率限制
+
+不要仅凭记忆硬写字段名。
+
+### 字段确认
+
+对 `fields` 参数，优先使用已知字段白名单或接口文档确认。
+若用户要求字段不存在，应明确说明，而不是盲查。
+
+### 默认分段拉取
+
+长区间数据不要一次性全拉。
+建议：
+
+- 日线 / 周线 / 月线：按年或季度切片
+- 财报：按年份 / 报告期切片
+- 分钟数据：按月 / 周切片
+- 大批量多标的：按标的分批 + 日期分段
+
+### 重试与限流
+
+- 仅对瞬时错误（网络抖动、超时、429）进行有限重试
+- 参数错误、权限不足、字段错误不要盲重试
+- 批量拉取时加入节流，避免高频撞限
+
+### 分段合并
+
+分段拉取后：
+
+- 合并
+- 去重
+- 按主键排序
+- 记录失败分段
+- 若部分成功，要明确告诉用户哪些段失败了
+
+***
+
+## Output contract
+
+除非用户明确只要原始表，否则优先按这个结构输出：
+
+1. **一句话结论**
+2. **数据范围与口径**
+3. **关键指标 / 关键表格**
+4. **异常点 / 风险点 / 解释限制**
+5. **如有本地输出，给出文件路径**
+
+### 结果交付形态
+
+按任务复杂度选择：
+
+- 小结果：Markdown 摘要 + 简短表格
+- 中等数据表：CSV
+- 大规模 / 后续分析：Parquet
+- 需要可复用流程：附 Python 脚本
+- 需要可视化时：输出图表 PNG 或说明可绘制图表
+
+### 元信息
+
+生成数据文件时，尽量同时记录：
+
+- 接口名
+- 请求参数
+- 拉取时间
+- 数据行数
+- 字段列表
+- 是否存在失败分段 / 缺失
+
+***
+
+## Workflow templates
+
+下面这些模板，是本 skill 的核心。
+不要直接从接口想起，而要从任务模板想起。
+
+### 1. 单标的行情分析
+
+适用：
+
+- 看下 XX 最近怎么样
+- 这票最近强不强
+- 今年以来表现如何
+
+默认流程：
+
+1. 解析标的
+2. 确定时间范围
+3. 取行情 + 必要基础指标
+4. 总结区间涨跌、成交活跃度、高低点、波动
+5. 输出一句结论 + 关键数字
+
+### 2. 多标的横向对比
+
+适用：
+
+- XX 和 YY 谁更强
+- 把这几家公司对比一下
+
+默认流程：
+
+1. 锁定对象
+2. 统一时间口径
+3. 选 3～5 个关键指标
+4. 输出对比表
+5. 给出“谁在哪方面更强”的总结
+
+### 3. 财务质量快照
+
+适用：
+
+- 看下 XX 财报
+- 最近几个季度利润趋势
+- 财务质量怎么样
+
+默认流程：
+
+1. 拉最近 8 个季度 + 最近年度财务核心数据
+2. 区分营收、利润、毛利率、ROE、现金流
+3. 标出改善 / 恶化 / 波动点
+4. 说明累计值、单季值、同比口径
+
+### 4. 估值分析 / 筛选
+
+适用：
+
+- 现在估值高不高
+- 谁更便宜
+- 筛低估值高股息
+
+默认流程：
+
+1. 明确标的池
+2. 拉 `daily_basic` 等估值指标
+3. 必要时联动财务质量
+4. 输出排序、极值、口径说明
+
+### 5. 资金流追踪
+
+适用：
+
+- 最近资金在买什么
+- 北向最近流向哪里
+- 主力资金流入最多的是谁
+
+默认流程：
+
+1. 明确资金口径（北向 / 主力 / 龙虎榜 / 板块资金）
+2. 确定时间窗
+3. 拉净流入 / 活跃成交 / 持续性
+4. 和价格表现联动解释
+5. 避免把单日噪声说成趋势
+
+### 6. 板块 / 题材轮动分析
+
+适用：
+
+- 最近哪个板块最强
+- 机器人最近强在哪
+- 某概念板块里有哪些成分股
+
+默认流程：
+
+1. 确定分类口径
+2. 拉板块区间表现
+3. 必要时联动成分股、资金流、涨停梯队
+4. 输出强势板块排行与代表标的
+
+### 7. 公告 / 新闻 / 事件梳理
+
+适用：
+
+- 最近有什么公告
+- 有没有什么催化
+- 最近新闻面怎么样
+
+默认流程：
+
+1. 明确对象和时间窗
+2. 拉公告 / 新闻 / 研报 / 政策数据
+3. 去噪，提炼 3～5 条主线
+4. 区分事实、公告、媒体解读
+5. 必要时结合股价异动做弱因果解释
+
+### 8. 数据导出与研究准备
+
+适用：
+
+- 拉一份 CSV
+- 做回测数据表
+- 导出某段时间的行情/财务数据
+
+默认流程：
+
+1. 明确数据范围、频率、字段
+2. 采用分段策略取数
+3. 清洗、去重、统一字段类型
+4. 输出 CSV / parquet
+5. 给出文件路径和元信息
+
+### 9. 综合研究简报
+
+适用：
+
+- 给我快速研究一下 XX
+- 做个投资者视角简报
+- 先给个全景判断
+
+默认流程：
+
+1. 一句话结论
+2. 行情表现
+3. 财务趋势
+4. 估值水平
+5. 资金流情况
+6. 公告 / 新闻催化
+7. 风险点
+8. 值得继续深挖的问题
+
+***
+
+## Data quality rules
+
+拉取完成后，至少做这些检查：
+
+- schema 校验
+- 关键字段存在性检查
+- 主键去重
+- 固定排序
+- 日期标准化
+- 数值字段类型规范化
+
+### 空结果处理
+
+空表不一定是失败，要区分：
+
+- 非交易日
+- 区间无数据
+- 股票未上市
+- 参数错误
+- 接口权限不足
+
+不要把所有空结果都说成“接口坏了”。
+
+***
+
+## Cache and reuse rules
+
+为了让 skill 可长期复用，应优先支持：
+
+- 基础表缓存（如 `stock_basic`、交易日历、指数基础信息）
+- 增量更新，而不是每次全量重拉
+- 大任务断点续跑
+- 结果文件规范命名
+
+推荐命名格式：
+
+- `daily_600519.SH_20230101_20231231_20260322.csv`
+- `fina_indicator_300750.SZ_20260322.parquet`
+
+缓存命中时，最好说明哪些来自缓存，哪些是新拉取的数据。
+
+***
+
+## Error handling
+
+优先用“人话 + 调试细节分层”的方式输出错误。
+
+### 用户可见层
+
+- token 未配置
+- 当前接口可能需要更高积分/权限
+- 时间范围过大，已自动改为分段拉取
+- 股票名称不唯一，请确认是哪一个
+- 当前结果为空，可能因为该日期非交易日 / 标的未上市 / 无权限
+
+### 调试层
+
+必要时补：
+
+- 接口名
+- 参数
+- 失败分段
+- 异常原文
+
+### 部分成功原则
+
+如果部分分段失败，不要说“成功完成”。
+应明确说：
+
+- 哪些部分成功
+- 哪些部分失败
+- 是否已生成不完整结果
+
+***
+
+## Recommended minimal interface set
+
+主 skill 正文不要塞几百个接口。
+优先记住 80% 常用任务的核心接口集：
+
+- `stock_basic`
+- `trade_cal`
+- `daily`
+- `pro_bar`
+- `daily_basic`
+- `fina_indicator`
+- `income`
+- `balancesheet`
+- `cashflow`
+- `forecast`
+- `express`
+- `moneyflow`
+- `moneyflow_hsgt`
+- `hsgt_top10`
+- `top_list`
+- `index_basic`
+- `index_daily`
+- `index_classify`
+- `sw_daily`
+- `ths_index`
+- `ths_member`
+- `limit_list_d`
+- `limit_step`
+- `news`
+- `major_news`
+- `research_report`
+- `anns_d`
+- `cn_cpi`
+- `cn_pmi`
+- `us_tycr`
+
+全部数据接口，请参考 `references/数据接口.md`。
+
+***
+
+## Best practices
+
+- 先理解任务，再选接口
+- 能少取就少取，先核心数据，再扩展
+- 先给结论，再给证据
+- 默认说人话，不堆字段名
+- 对“最近 / 财报 / 强不强 / 资金关注”这类模糊中文表达，要有合理默认口径
+- 大任务先给执行计划，再开跑
+- 导出任务尽量保留脚本、元信息、文件路径，方便复用
+
+***
+
+## Examples
+
+### 单票行情
+
+- 看下宁德时代最近三个月走势
+- 茅台今年以来涨了多少
+- 招行这两年最大回撤大概多少
+
+### 财务 / 估值
+
+- 看下比亚迪最近 8 个季度营收和净利润趋势
+- 茅台现在估值算高吗
+- 帮我找高 ROE 低负债的公司
+
+### 对比
+
+- 比一下茅台、五粮液、泸州老窖近一年的涨幅和估值
+- 对比一下沪深300、中证500、创业板今年表现
+
+### 资金流 / 板块
+
+- 今天北向资金流入最多的股票有哪些
+- 最近哪个板块最强
+- 半导体板块最近一个月强不强
+
+### 公告 / 事件
+
+- 帮我梳理下寒武纪最近的重要公告
+- 最近机器人板块有什么消息面催化
+
+### 宏观
+
+- 看一下最近 CPI、PPI、PMI 变化
+- 当前市场风格偏成长还是价值
+
+### 导出
+
+- 把沪深300成分股近两年日线导成 CSV
+- 下载宁德时代 2020 到现在的复权行情
+- 把最近 3 年 ROE、PE、PB、营收增速拉成一个表
+
+***
+
+## Quick rule
+
+当用户在说：
+
+- 看走势
+- 查财报
+- 比较公司
+- 看板块
+- 看资金流
+- 梳理公告新闻
+- 看宏观
+- 拉数据导出
+
+就不要先想“有哪些接口”。
+先想：
+**这是什么任务？默认该走哪条数据工作流？结果应该怎样交付才真正有用？**
