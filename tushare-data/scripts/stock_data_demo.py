@@ -13,6 +13,7 @@ token = os.getenv('TUSHARE_TOKEN') or ts.get_token()
 
 # 初始化pro接口
 pro = ts.pro_api(token)
+pro._DataApi__http_url = os.getenv("TUSHARE_PROXY_URL", "")
 
 
 def get_stock_list():

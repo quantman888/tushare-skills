@@ -23,7 +23,7 @@ Tushare 官方提供的SKILL工具包。
 * 将 tushare 目录复制到本地的 skills 目录：
 * 通过skills，安装github上的源码包
 ```bash
-npx skills add https://github.com/waditu-tushare/skills.git --skill tushare-data
+npx skills add https://github.com/quantman888/tushare-skills.git --skill tushare-data
 ```
 * 通过skills，安装gitee上的源码包
 ```bash
@@ -32,10 +32,11 @@ npx skills add https://gitee.com/lwdt/skills.git --skill tushare-data
 
 ### 3. 配置 Token
 
-到 [Tushare 官网](https://tushare.pro) 注册账号并获取 API token：
+到 [Tushare 官网](https://tushare.pro) 注册账号并获取 API token。当前 fork 通过代理地址转发请求，建议把下面两行直接写入 `~/.bashrc`，然后重新打开 shell，或执行 `source ~/.bashrc`：
 
 ```bash
 export TUSHARE_TOKEN="your_token_here"
+export TUSHARE_PROXY_URL="https://your-proxy-host/dataapi"
 ```
 
 ## 使用方法

@@ -1,0 +1,218 @@
+name: Tushare Upstream Sync PR
+
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: tushare-upstream-sync-pr
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: waditu-tushare/skills
+  UPSTREAM_BRANCH: master
+  SYNC_BRANCH: automation/tushare-upstream-sync
+
+jobs:
+  sync_upstream:
+    name: Tushare Upstream Sync / Open or Reuse PR
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Generate GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Resolve GitHub App bot identity
+        id: bot_identity
+        uses: quantman888/workflow-reusable/.github/actions/resolve-github-app-bot@482bcb760344932e8a93a289e4cff88dfd88e50d
+        with:
+          github-token: ${{ steps.app_token.outputs.token }}
+          app-slug: ${{ steps.app_token.outputs.app-slug }}
+
+      - name: Checkout default branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch || 'master' }}
+          fetch-depth: 0
+          token: ${{ steps.app_token.outputs.token }}
+
+      - name: Prepare upstream sync branch
+        id: sync_state
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'master' }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "${{ steps.bot_identity.outputs.name }}"
+          git config user.email "${{ steps.bot_identity.outputs.email }}"
+
+          while IFS='=' read -r key value; do
+            echo "${key}=${value}" >> "${GITHUB_OUTPUT}"
+          done < <(
+            bash ./.github/scripts/prepare-upstream-sync-branch.sh \
+              --upstream-repo "${UPSTREAM_REPO}" \
+              --upstream-branch "${UPSTREAM_BRANCH}" \
+              --default-branch "${DEFAULT_BRANCH}" \
+              --sync-branch "${SYNC_BRANCH}"
+          )
+
+      - name: Locate existing sync PR
+        id: existing_pr
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'master' }}
+        run: |
+          set -euo pipefail
+
+          pr_head_ref="${REPOSITORY_OWNER}:${SYNC_BRANCH}"
+          prs_json="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${REPOSITORY}/pulls?state=open&head=${pr_head_ref}")"
+          pr_count="$(jq 'length' <<< "${prs_json}")"
+
+          if [[ "${pr_count}" -gt 1 ]]; then
+            echo "Expected at most one open PR for ${pr_head_ref}, found ${pr_count}." >&2
+            exit 1
+          fi
+
+          pr_number=""
+          pr_url=""
+          if [[ "${pr_count}" -eq 1 ]]; then
+            existing_base="$(jq -r '.[0].base.ref' <<< "${prs_json}")"
+            if [[ "${existing_base}" != "${DEFAULT_BRANCH}" ]]; then
+              echo "Existing PR for ${pr_head_ref} targets ${existing_base}, expected ${DEFAULT_BRANCH}." >&2
+              exit 1
+            fi
+
+            pr_number="$(jq -r '.[0].number' <<< "${prs_json}")"
+            pr_url="$(jq -r '.[0].html_url' <<< "${prs_json}")"
+          fi
+
+          {
+            echo "pr_number=${pr_number}"
+            echo "pr_url=${pr_url}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Close stale sync PR
+        if: steps.sync_state.outputs.changed == 'false' && steps.existing_pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.existing_pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr close "${PR_NUMBER}" --repo "${REPOSITORY}"
+
+      - name: Push sync branch
+        if: steps.sync_state.outputs.changed == 'true' && steps.existing_pr.outputs.pr_number == ''
+        env:
+          BRANCH: ${{ env.SYNC_BRANCH }}
+        run: |
+          set -euo pipefail
+          git push --force --set-upstream origin "${BRANCH}"
+
+      - name: Open or reuse sync PR
+        if: steps.sync_state.outputs.changed == 'true' && steps.existing_pr.outputs.pr_number == ''
+        id: sync_pr
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'master' }}
+        run: |
+          set -euo pipefail
+
+          title="chore(sync): merge upstream waditu-tushare/skills"
+          body="$(cat <<EOF
+          Automated upstream sync PR.
+
+          This branch tracks upstream history directly. If GitHub reports merge conflicts,
+          local customizations need manual resolution before merge.
+
+          - source_repository: ${UPSTREAM_REPO}
+          - source_branch: ${UPSTREAM_BRANCH}
+          - upstream_commit: ${{ steps.sync_state.outputs.upstream_sha }}
+          - sync_branch: ${SYNC_BRANCH}
+          - target_repository: ${REPOSITORY}
+          - update_strategy: upstream-history-pr
+          - merge_strategy: validate-then-merge-commit
+          EOF
+          )"
+          pr_head_ref="${REPOSITORY_OWNER}:${SYNC_BRANCH}"
+
+          pr_json="$(gh api \
+            --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${REPOSITORY}/pulls" \
+            -f title="${title}" \
+            -f body="${body}" \
+            -f base="${DEFAULT_BRANCH}" \
+            -f head="${pr_head_ref}")"
+
+          {
+            echo "pr_number=$(jq -r '.number' <<< "${pr_json}")"
+            echo "pr_url=$(jq -r '.html_url' <<< "${pr_json}")"
+            echo "pr_created=true"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Write workflow summary
+        if: ${{ always() }}
+        env:
+          CHANGED: ${{ steps.sync_state.outputs.changed || 'false' }}
+          UPSTREAM_SHA: ${{ steps.sync_state.outputs.upstream_sha || '' }}
+          PR_NUMBER: ${{ steps.sync_pr.outputs.pr_number || steps.existing_pr.outputs.pr_number || '' }}
+          PR_URL: ${{ steps.sync_pr.outputs.pr_url || steps.existing_pr.outputs.pr_url || '' }}
+          CLOSED_STALE_PR: ${{ steps.sync_state.outputs.changed == 'false' && steps.existing_pr.outputs.pr_number != '' }}
+          PRESERVED_OPEN_PR: ${{ steps.sync_state.outputs.changed == 'true' && steps.existing_pr.outputs.pr_number != '' }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Tushare Upstream Sync"
+            echo ""
+            echo "- source_repository: \`${UPSTREAM_REPO}\`"
+            echo "- source_branch: \`${UPSTREAM_BRANCH}\`"
+            echo "- changed: \`${CHANGED}\`"
+            echo "- selected_runner: \`self-hosted,linux,x64\`"
+            if [[ -n "${UPSTREAM_SHA}" ]]; then
+              echo "- upstream_commit: \`${UPSTREAM_SHA}\`"
+            fi
+            if [[ -n "${PR_NUMBER}" ]]; then
+              echo "- pr_number: \`${PR_NUMBER}\`"
+            fi
+            if [[ -n "${PR_URL}" ]]; then
+              echo "- pr_url: ${PR_URL}"
+            fi
+            if [[ "${CLOSED_STALE_PR}" == 'true' ]]; then
+              echo "- stale_pr: closed"
+            fi
+            if [[ "${PRESERVED_OPEN_PR}" == 'true' ]]; then
+              echo "- existing_pr: preserved"
+              echo "- action: skipped branch refresh to avoid overwriting manual conflict resolution"
+            fi
+            if [[ "${CHANGED}" == 'true' ]]; then
+              echo "- update_strategy: \`upstream-history-pr\`"
+              echo "- merge_strategy: \`validate-then-merge-commit\`"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

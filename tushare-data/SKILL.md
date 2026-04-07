@@ -15,6 +15,9 @@ requirements:
     - name: TUSHARE_TOKEN
       required: false
       sensitive: true
+    - name: TUSHARE_PROXY_URL
+      required: false
+      sensitive: true
   network_access: true
 ---
 
@@ -165,7 +168,7 @@ requirements:
 
 1. 检查 Python 是否可用， 版本要求 3.7+
 2. 检查 `tushare` 包是否已安装·
-3. 检查 `TUSHARE_TOKEN` 是否存在.
+3. 检查 `TUSHARE_TOKEN` 和 `TUSHARE_PROXY_URL` 是否存在.
 4. 必要时做一次轻量接口冒烟测试（如交易日历 / 基础接口）
 5. 如用户请求高权限接口，提前提示可能存在积分/权限限制
 
@@ -173,6 +176,13 @@ requirements:
 
 ```bash
 export TUSHARE_TOKEN=your_token
+export TUSHARE_PROXY_URL=https://your-proxy-host/dataapi
+```
+
+初始化 `pro` 后，补充设置：
+
+```python
+pro._DataApi__http_url = os.getenv("TUSHARE_PROXY_URL", "")
 ```
 
 不要等到主查询跑失败了才暴露环境问题。

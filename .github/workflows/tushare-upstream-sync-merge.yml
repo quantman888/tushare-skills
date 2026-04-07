@@ -1,0 +1,233 @@
+name: Tushare Upstream Sync Merge
+
+on:
+  workflow_run:
+    workflows:
+      - Tushare Upstream Sync Validate
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: tushare-upstream-sync-merge
+  cancel-in-progress: false
+
+env:
+  SYNC_BRANCH: automation/tushare-upstream-sync
+
+jobs:
+  merge_sync_pr:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_branch == 'automation/tushare-upstream-sync'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Generate GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Locate open sync PR
+        id: sync_pr
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          pr_head_ref="${REPOSITORY_OWNER}:${SYNC_BRANCH}"
+          prs_json="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${REPOSITORY}/pulls?state=open&head=${pr_head_ref}")"
+          pr_count="$(jq 'length' <<< "${prs_json}")"
+
+          if [[ "${pr_count}" -gt 1 ]]; then
+            echo "Expected at most one open PR for ${pr_head_ref}, found ${pr_count}." >&2
+            exit 1
+          fi
+
+          if [[ "${pr_count}" -eq 0 ]]; then
+            echo "pr_number=" >> "${GITHUB_OUTPUT}"
+            echo "pr_url=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          pr_body="$(jq -r '.[0].body // ""' <<< "${prs_json}")"
+          recorded_upstream_sha="$(sed -n 's/^- upstream_commit: //p' <<< "${pr_body}" | head -n 1)"
+
+          {
+            echo "pr_number=$(jq -r '.[0].number' <<< "${prs_json}")"
+            echo "pr_url=$(jq -r '.[0].html_url' <<< "${prs_json}")"
+            echo "pr_head_sha=$(jq -r '.[0].head.sha' <<< "${prs_json}")"
+            echo "pr_base_sha=$(jq -r '.[0].base.sha' <<< "${prs_json}")"
+            echo "recorded_upstream_sha=${recorded_upstream_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve pull request mergeability
+        if: steps.sync_pr.outputs.pr_number != ''
+        id: mergeable
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.sync_pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          pr_json=""
+          mergeable="null"
+          for _ in {1..10}; do
+            pr_json="$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+            mergeable="$(jq -r '.mergeable' <<< "${pr_json}")"
+            if [[ "${mergeable}" != "null" ]]; then
+              break
+            fi
+            sleep 3
+          done
+
+          mergeable_state="$(jq -r '.mergeable_state // "unknown"' <<< "${pr_json}")"
+          clean="false"
+          if [[ "${mergeable}" == "true" ]]; then
+            clean="true"
+          fi
+
+          {
+            echo "clean=${clean}"
+            echo "mergeable=${mergeable}"
+            echo "mergeable_state=${mergeable_state}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Guard validated head commit
+        if: steps.sync_pr.outputs.pr_number != ''
+        env:
+          PR_NUMBER: ${{ steps.sync_pr.outputs.pr_number }}
+          PR_HEAD_SHA: ${{ steps.sync_pr.outputs.pr_head_sha }}
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${VALIDATED_HEAD_SHA}" ]]; then
+            echo "::error::workflow_run.head_sha is empty. Refusing to auto-merge without a validated head commit."
+            exit 1
+          fi
+
+          if [[ "${PR_HEAD_SHA}" != "${VALIDATED_HEAD_SHA}" ]]; then
+            echo "::warning::PR #${PR_NUMBER} head changed after validation (${VALIDATED_HEAD_SHA} -> ${PR_HEAD_SHA}). Leave it open for manual review or a fresh validation run."
+            exit 0
+          fi
+
+      - name: Guard manual review PR
+        if: steps.sync_pr.outputs.pr_number != ''
+        env:
+          PR_NUMBER: ${{ steps.sync_pr.outputs.pr_number }}
+          PR_HEAD_SHA: ${{ steps.sync_pr.outputs.pr_head_sha }}
+          RECORDED_UPSTREAM_SHA: ${{ steps.sync_pr.outputs.recorded_upstream_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${RECORDED_UPSTREAM_SHA}" ]]; then
+            echo "::warning::PR #${PR_NUMBER} is missing recorded upstream commit metadata. Leave it open for manual review."
+            exit 0
+          fi
+
+          if [[ "${PR_HEAD_SHA}" != "${RECORDED_UPSTREAM_SHA}" ]]; then
+            echo "::warning::PR #${PR_NUMBER} no longer points at the raw upstream commit (${RECORDED_UPSTREAM_SHA} -> ${PR_HEAD_SHA}). Skipping auto-merge so manual conflict resolution stays under review."
+            exit 0
+          fi
+
+      - name: Merge validated sync PR
+        if: >-
+          steps.sync_pr.outputs.pr_number != '' &&
+          steps.mergeable.outputs.clean == 'true' &&
+          steps.sync_pr.outputs.pr_head_sha == github.event.workflow_run.head_sha &&
+          steps.sync_pr.outputs.pr_head_sha == steps.sync_pr.outputs.recorded_upstream_sha
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.sync_pr.outputs.pr_number }}
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          set +e
+          merge_output="$(gh pr merge "${PR_NUMBER}" --repo "${REPOSITORY}" --merge --match-head-commit "${VALIDATED_HEAD_SHA}" --delete-branch 2>&1)"
+          merge_code=$?
+          set -e
+
+          if [[ "${merge_code}" -eq 0 ]]; then
+            echo "Validated sync PR merged with a merge commit."
+            exit 0
+          fi
+
+          if grep -Eqi 'merge commits are not allowed' <<< "${merge_output}"; then
+            echo "::error::Repository must allow merge commits for upstream sync PRs. Squash or rebase would break upstream ancestry."
+            echo "${merge_output}" >&2
+            exit 1
+          fi
+
+          if grep -Eqi 'not mergeable|merge conflict|cannot be cleanly created|Pull request is not mergeable' <<< "${merge_output}"; then
+            echo "::warning::${merge_output}"
+            exit 0
+          fi
+
+          echo "${merge_output}" >&2
+          exit "${merge_code}"
+
+      - name: Write workflow summary
+        if: ${{ always() }}
+        env:
+          PR_NUMBER: ${{ steps.sync_pr.outputs.pr_number || '' }}
+          PR_URL: ${{ steps.sync_pr.outputs.pr_url || '' }}
+          PR_HEAD_SHA: ${{ steps.sync_pr.outputs.pr_head_sha || '' }}
+          PR_BASE_SHA: ${{ steps.sync_pr.outputs.pr_base_sha || '' }}
+          RECORDED_UPSTREAM_SHA: ${{ steps.sync_pr.outputs.recorded_upstream_sha || '' }}
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          MERGEABLE: ${{ steps.mergeable.outputs.mergeable || 'unknown' }}
+          MERGEABLE_STATE: ${{ steps.mergeable.outputs.mergeable_state || 'unknown' }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Tushare Upstream Sync Merge"
+            echo ""
+            echo "- selected_runner: \`self-hosted,linux,x64\`"
+            echo "- mergeable: \`${MERGEABLE}\`"
+            echo "- mergeable_state: \`${MERGEABLE_STATE}\`"
+            if [[ -n "${PR_NUMBER}" ]]; then
+              echo "- pr_number: \`${PR_NUMBER}\`"
+            fi
+            if [[ -n "${PR_URL}" ]]; then
+              echo "- pr_url: ${PR_URL}"
+            fi
+            if [[ -n "${PR_HEAD_SHA}" ]]; then
+              echo "- pr_head_sha: \`${PR_HEAD_SHA}\`"
+            fi
+            if [[ -n "${PR_BASE_SHA}" ]]; then
+              echo "- pr_base_sha: \`${PR_BASE_SHA}\`"
+            fi
+            if [[ -n "${RECORDED_UPSTREAM_SHA}" ]]; then
+              echo "- recorded_upstream_sha: \`${RECORDED_UPSTREAM_SHA}\`"
+            fi
+            if [[ -n "${VALIDATED_HEAD_SHA}" ]]; then
+              echo "- validated_head_sha: \`${VALIDATED_HEAD_SHA}\`"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
